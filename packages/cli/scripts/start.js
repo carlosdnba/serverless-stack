@@ -14,6 +14,7 @@ const {
   Stacks,
   Bridge,
   State,
+  useStacksBuilder,
 } = require("@serverless-stack/core");
 
 const paths = require("./util/paths");
@@ -148,36 +149,17 @@ module.exports = async function (argv, config, cliInfo) {
   // Wire up watcher
   const watcher = new Runtime.Watcher();
   watcher.reload(paths.appPath, config);
-  watcher.onChange(async (funcs) => {
+  watcher.onChange.add(async (funcs) => {
     if (!funcs.length) return;
     clientLogger.info(chalk.gray("New: Rebuilding..."));
     await Promise.all(funcs.map((f) => server.drain(f).catch(() => {})));
     clientLogger.info(chalk.gray("New: Done rebuilding."));
   });
 
-  // This is terrible and needs to be moved to typescript with a proper state machine/reactivity library
-  /** @type {"idle" | "building" | "dirty" | "deploying"} */
-  let CDK_STATE = "idle";
-
-  const cdkWatcher = new Stacks.Watcher(config.main);
-  cdkWatcher.onChange.add(async () => {
-    if (CDK_STATE !== "idle") return;
-    CDK_STATE = "building";
-    await Stacks.build(paths.appPath, config);
-    CDK_STATE = "deploying";
-    await deployApp(
-      argv,
-      {
-        ...config,
-        debugEndpoint,
-        debugBucketArn,
-        debugBucketName,
-      },
-      cliInfo
-    );
-    watcher.reload(paths.appPath, config);
-    CDK_STATE = "idle";
-  });
+  const stacksWatcher = new Stacks.Watcher(config.main);
+  const stacksBuilder = useStacksBuilder(paths.appPath, config);
+  stacksBuilder.onTransition((state) => console.log("State:", state.value));
+  stacksWatcher.onChange.add(() => stacksBuilder.send("FILE_CHANGE"));
 
   // Handle requests from udp or ws
   async function handleRequest(req) {

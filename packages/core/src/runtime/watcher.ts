@@ -4,14 +4,10 @@ import { Handler } from "./handler";
 import { Config } from "../config";
 import path from "path";
 import pm from "picomatch";
+import { EventDelegate } from "../events";
 
 export class Watcher {
-  private handleChange?: (opts: Handler.Opts[]) => void;
-
-  public onChange(input: (opts: Handler.Opts[]) => void) {
-    this.handleChange = input;
-  }
-
+  public readonly onChange = new EventDelegate<Handler.Opts[]>();
   private chokidar?: chokidar.FSWatcher;
 
   public reload(root: string, config: Config) {
@@ -45,7 +41,7 @@ export class Watcher {
       const funcs = matchers
         .filter(([_, matchers]) => matchers.some((m) => m(file)))
         .map(([f]) => f);
-      this.handleChange?.(funcs);
+      this.onChange.trigger(funcs);
     });
   }
 }
